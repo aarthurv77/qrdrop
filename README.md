@@ -21,12 +21,27 @@ Linguagem do projeto: **Go**.
 
 O celular não instala nada: usa o navegador. O PC roda um único binário, que já traz a página web dentro dele.
 
-## Uso (planejado)
+## Uso
 
 ```bash
-qrdrop                       # salva em ./recebidos, porta 8080
+qrdrop                         # recebe: salva em ./recebidos, porta 8080, mostra o QR
 qrdrop -dir ~/Fotos -port 9000
+qrdrop -max-size 2GB -ttl 30m  # limite por arquivo e link que expira em 30 min
+qrdrop -share slides.pdf -share ~/Musicas   # o celular também pode BAIXAR esses arquivos
+qrdrop -ip 192.168.0.12        # força o IP do QR (quando o PC tem várias redes)
+
+# de outro PC, pelo terminal: envia vários arquivos em paralelo
+qrdrop send "http://192.168.0.12:8080/?t=TOKEN" video.mp4 fotos/*.jpg
+qrdrop send -p 8 URL arquivos...   # 8 envios ao mesmo tempo (padrão: 4)
 ```
+
+Celular ou outro computador também podem abrir a URL do QR no navegador e arrastar os arquivos. Em todos os casos cada arquivo vai numa requisição separada, em paralelo, e o servidor calcula o SHA-256 enquanto grava; o `qrdrop send` confere esse hash com o do arquivo original. Na página dá para cancelar e tentar de novo cada arquivo.
+
+`qrdrop -h` lista todas as opções. No Ctrl+C (ou quando o `-ttl` vence) o qrdrop espera os envios em andamento terminarem e mostra um resumo.
+
+**Dicas para a demo:** no Windows, permita o qrdrop no firewall na primeira vez (inclusive em redes públicas). Wi-Fi de faculdade costuma bloquear um aparelho de falar com outro: o mais seguro é ligar o roteador do celular e conectar o notebook nele.
+
+No iPhone, se o Safari disser que o pedido era para "uma URL http com apenas https ativado", desligue Ajustes > Apps > Safari > Aviso de Conexão Não Segura (ou abra o endereço no Chrome ou no Firefox). O qrdrop usa http, e esse ajuste faz o Safari recusar qualquer endereço http.
 
 ## Desenvolvimento
 
@@ -34,8 +49,14 @@ Requisitos: Go 1.22+.
 
 ```bash
 go run ./cmd/qrdrop      # roda
-go test ./...            # testes
+go test ./...            # testes (inclui um de ponta a ponta que compila o qrdrop)
+go test -short ./...     # o mesmo, sem o teste de ponta a ponta
 go vet ./...             # análise estática
+go run golang.org/x/vuln/cmd/govulncheck@latest ./...   # vulnerabilidades conhecidas nas dependências
+go test -race ./...      # testes com o detector de condições de corrida
+go test -run=^$ -fuzz=FuzzSafeName ./internal/storage   # fuzzing dos nomes de arquivo
+go test -run=^$ -bench=. ./internal/server              # vazão do upload em MB/s
+./scripts/build.sh v1.0.0  # binários para Windows, Linux e macOS em dist/
 ```
 
 ## Documentação

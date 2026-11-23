@@ -4,9 +4,274 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>qrdrop</title>
+  <style>
+    :root { --bg:#fafafa; --card:#fff; --ink:#1d1d1f; --muted:#6e6e73; --line:#e3e3e8; --accent:#2563eb; --ok:#15803d; --err:#b91c1c; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#111214; --card:#1c1d21; --ink:#f2f2f4; --muted:#a1a1aa; --line:#2e2f35; --accent:#60a5fa; --ok:#4ade80; --err:#f87171; }
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; font:16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
+    main { max-width:560px; margin:0 auto; padding:24px 16px 48px; }
+    h1 { font-size:24px; margin:0 0 4px; }
+    h2 { font-size:17px; margin:28px 0 10px; }
+    p.sub { margin:0; color:var(--muted); }
+    #notes { margin:4px 0 0; color:var(--muted); font-size:14px; }
+    #banner { display:none; margin:16px 0 0; padding:12px; border-radius:10px; background:var(--card); border:1px solid var(--err); color:var(--err); }
+    #drop { position:relative; display:block; margin-top:20px; border:2px dashed var(--line); border-radius:12px; padding:32px 16px; text-align:center; background:var(--card); cursor:pointer; }
+    #drop.over, #drop:focus-within { border-color:var(--accent); }
+    #drop:focus-within { outline:2px solid var(--accent); outline-offset:2px; }
+    #drop strong { color:var(--accent); }
+    /* Escondido só para os olhos: com display:none o campo sairia da ordem do
+       Tab, e quem usa teclado ou leitor de tela não conseguiria escolher arquivos. */
+    input[type=file] { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; padding:0; }
+    #summary { margin:16px 0 0; font-size:14px; color:var(--muted); min-height:1.4em; }
+    ul { list-style:none; padding:0; margin:10px 0 0; }
+    li { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:10px; }
+    .row { display:flex; justify-content:space-between; align-items:center; gap:8px; font-size:14px; }
+    .name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; min-width:0; }
+    .status { color:var(--muted); white-space:nowrap; }
+    .bar { height:6px; background:var(--line); border-radius:3px; margin-top:8px; overflow:hidden; }
+    .bar > div { height:100%; width:0; background:var(--accent); transition:width .15s; }
+    li.ok .bar > div { background:var(--ok); }
+    li.err .bar > div, li.canceled .bar > div { background:var(--err); }
+    .info { font-size:12px; color:var(--muted); margin-top:6px; word-break:break-all; }
+    li.err .info { color:var(--err); }
+    button, a.btn { font:inherit; font-size:13px; padding:4px 10px; border-radius:8px; border:1px solid var(--line); background:transparent; color:var(--accent); cursor:pointer; text-decoration:none; white-space:nowrap; }
+    .actions { margin-top:8px; }
+    .actions:empty { display:none; }
+    #shared li .row { gap:12px; }
+  </style>
 </head>
 <body>
+<main>
   <h1>qrdrop</h1>
-  <p>Página de upload: implementação na issue "Página mobile de envio de múltiplos arquivos".</p>
+  <p class="sub">Os arquivos vão direto para o computador, pela sua rede.</p>
+  <p id="notes"></p>
+  <div id="banner" role="alert"></div>
+
+  <label id="drop">
+    <strong>Escolher arquivos</strong> ou arraste aqui
+    <input id="pick" type="file" multiple>
+  </label>
+
+  <p id="summary" aria-live="polite"></p>
+  <ul id="list"></ul>
+
+  <section id="shared-section" hidden>
+    <h2>Baixar do computador</h2>
+    <ul id="shared"></ul>
+  </section>
+</main>
+
+<script>
+  // Quantos uploads ao mesmo tempo. Com o SSE são 5 conexões: em HTTP/1.1
+  // o navegador abre no máximo 6 por servidor, e a sexta fica para os downloads.
+  const PARALLEL = 4;
+  const token = new URLSearchParams(location.search).get("t") || "";
+  const q = "?t=" + encodeURIComponent(token);
+  let maxSize = 0;           // limite por arquivo informado pelo servidor (0 = sem limite)
+  const all = [];            // todos os itens da lista, na ordem em que entraram
+  const byId = new Map();    // id do envio atual -> item (para os eventos do SSE)
+  const queue = [];
+  let running = 0;
+
+  init();
+
+  // /info diz o limite de tamanho, a validade do link e o que dá para baixar.
+  async function init() {
+    try {
+      const res = await fetch("/info" + q, { cache: "no-store" });
+      if (res.status === 401) return banner("Este link não vale mais. Escaneie o QR code de novo.");
+      if (!res.ok) throw new Error(res.statusText);
+      const info = await res.json();
+      maxSize = info.maxSize || 0;
+      const notes = [];
+      if (maxSize > 0) notes.push("até " + human(maxSize) + " por arquivo");
+      if (info.expiresAt) {
+        const t = new Date(info.expiresAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+        notes.push("link válido até " + t);
+      }
+      document.getElementById("notes").textContent = notes.join(" · ");
+      renderShared(info.shared || []);
+    } catch (e) {
+      banner("Não consegui falar com o computador. O qrdrop está aberto e o celular está no mesmo Wi-Fi?");
+    }
+  }
+
+  // Progresso vindo do servidor (bytes realmente gravados no disco), via SSE.
+  // Do lado do Go, quem alimenta este stream é o hub de progresso (channels).
+  const events = new EventSource("/events" + q);
+  events.onmessage = (e) => {
+    const ev = JSON.parse(e.data);
+    const item = byId.get(ev.id);
+    if (item && item.state === "sending" && !ev.done) {
+      item.serverBytes = ev.bytes;
+      draw(item);
+    }
+  };
+
+  const pick = document.getElementById("pick");
+  const drop = document.getElementById("drop");
+  pick.onchange = () => { enqueue(pick.files); pick.value = ""; };
+  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+  drop.ondragleave = () => drop.classList.remove("over");
+  drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); enqueue(e.dataTransfer.files); };
+
+  function enqueue(files) {
+    for (const file of files) {
+      const item = { file, state: "queued", li: makeItem(file.name) };
+      all.push(item);
+      document.getElementById("list").prepend(item.li);
+      if (maxSize > 0 && file.size > maxSize) {
+        finish(item, "err", "maior que o limite de " + human(maxSize), false);
+        continue;
+      }
+      setState(item, "queued", "na fila");
+      queue.push(item);
+    }
+    next();
+  }
+
+  // Cada arquivo vai numa requisição separada; até PARALLEL ao mesmo tempo.
+  function next() {
+    while (running < PARALLEL && queue.length > 0) {
+      const item = queue.shift();
+      if (item.state === "queued") start(item);
+    }
+    summary();
+  }
+
+  function start(item) {
+    running++;
+    item.id = Math.random().toString(16).slice(2) + Date.now().toString(16);
+    byId.set(item.id, item);
+    item.serverBytes = 0;
+    item.sentBytes = 0;
+    item.started = performance.now();
+
+    const form = new FormData();
+    form.append("file", item.file, item.file.name);
+    const xhr = new XMLHttpRequest();
+    item.xhr = xhr;
+    xhr.open("POST", "/upload" + q);
+    xhr.setRequestHeader("X-Upload-ID", item.id);
+    xhr.setRequestHeader("X-File-Size", String(item.file.size));
+    // Progresso do lado do navegador: serve de reserva se o SSE cair.
+    xhr.upload.onprogress = (e) => { item.sentBytes = e.loaded; draw(item); };
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        const res = JSON.parse(xhr.responseText);
+        const secs = (performance.now() - item.started) / 1000;
+        const speed = secs > 0 ? " (" + human(item.file.size / secs) + "/s)" : "";
+        finish(item, "ok", "recebido em " + secs.toFixed(1) + " s" + speed, false,
+          "salvo como " + res.name + " · SHA-256 " + res.sha256.slice(0, 16) + "…");
+      } else if (xhr.status === 401) {
+        finish(item, "err", "link expirado: escaneie o QR de novo", false);
+      } else {
+        finish(item, "err", (xhr.responseText || xhr.statusText).trim(), true);
+      }
+    };
+    xhr.onerror = () => finish(item, "err", "a conexão caiu (o celular saiu do Wi-Fi ou o qrdrop foi fechado)", true);
+    xhr.onabort = () => finish(item, "canceled", "cancelado", true);
+    xhr.onloadend = () => { running--; byId.delete(item.id); next(); };
+    setState(item, "sending", "0%", "Cancelar", () => xhr.abort());
+    xhr.send(form);
+  }
+
+  function finish(item, state, message, retryable, extra) {
+    const labels = { ok: "recebido", err: "erro", canceled: "cancelado" };
+    item.li.className = state;
+    if (state === "ok") item.li.querySelector(".bar > div").style.width = "100%";
+    const retry = retryable ? () => { item.li.className = ""; setState(item, "queued", "na fila"); queue.push(item); next(); } : null;
+    setState(item, state, labels[state], retryable ? "Tentar de novo" : null, retry);
+    item.li.querySelector(".info").textContent = extra ? message + " · " + extra : message;
+    summary();
+  }
+
+  function setState(item, state, status, buttonLabel, onClick) {
+    item.state = state;
+    item.li.querySelector(".status").textContent = status;
+    if (state === "queued") {
+      item.li.querySelector(".info").textContent = "";
+      item.li.querySelector(".bar > div").style.width = "0";
+      buttonLabel = "Cancelar";
+      onClick = () => {
+        const i = queue.indexOf(item);
+        if (i >= 0) queue.splice(i, 1);
+        finish(item, "canceled", "cancelado antes de começar", true);
+      };
+    }
+    const actions = item.li.querySelector(".actions");
+    actions.textContent = "";
+    if (buttonLabel) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = buttonLabel;
+      b.onclick = onClick;
+      actions.append(b);
+    }
+  }
+
+  function draw(item) {
+    const total = item.file.size;
+    // O maior dos dois: o que o servidor gravou e o que o navegador já mandou
+    // (este inclui o cabeçalho do multipart, então limitamos a 99%).
+    const bytes = Math.max(item.serverBytes, Math.min(item.sentBytes, total * 0.99));
+    const pct = total > 0 ? Math.min(99, Math.floor(bytes * 100 / total)) : 99;
+    item.li.querySelector(".bar > div").style.width = pct + "%";
+    item.li.querySelector(".status").textContent = pct + "% de " + human(total);
+  }
+
+  function summary() {
+    const done = all.filter((i) => i.state === "ok").length;
+    const errors = all.filter((i) => i.state === "err").length;
+    const text = all.length === 0 ? "" :
+      done + " de " + all.length + " enviados" + (errors ? " · " + errors + " com erro" : "");
+    document.getElementById("summary").textContent = text;
+  }
+
+  function makeItem(name) {
+    const li = document.createElement("li");
+    li.innerHTML = '<div class="row"><span class="name"></span><span class="status"></span></div>' +
+                   '<div class="bar"><div></div></div><div class="info"></div><div class="actions"></div>';
+    li.querySelector(".name").textContent = name; // textContent: o nome nunca vira HTML
+    return li;
+  }
+
+  function renderShared(files) {
+    if (files.length === 0) return;
+    const ul = document.getElementById("shared");
+    for (const f of files) {
+      const li = document.createElement("li");
+      const row = document.createElement("div");
+      row.className = "row";
+      const name = document.createElement("span");
+      name.className = "name";
+      name.textContent = f.name;
+      const a = document.createElement("a");
+      a.className = "btn";
+      a.href = "/download/" + encodeURIComponent(f.name) + q;
+      a.download = f.name;
+      a.textContent = "Baixar · " + human(f.size);
+      row.append(name, a);
+      li.append(row);
+      ul.append(li);
+    }
+    document.getElementById("shared-section").hidden = false;
+  }
+
+  function banner(msg) {
+    const b = document.getElementById("banner");
+    b.textContent = msg;
+    b.style.display = "block";
+  }
+
+  function human(n) {
+    const u = ["B", "KB", "MB", "GB", "TB"];
+    let i = 0;
+    while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+    return (i === 0 ? Math.round(n) : n.toFixed(1)) + " " + u[i];
+  }
+</script>
 </body>
 </html>

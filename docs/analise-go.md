@@ -35,15 +35,21 @@ Para cada item: explicação curta + trecho do nosso código.
 
 | Construtor | Onde aparece no qrdrop |
 |---|---|
-| Tipos básicos e compostos (struct, slice, map) | _link_ |
-| Declarações (`var`, `:=`, `const`, inferência de tipos) | _link_ |
-| Comandos de controle (`for` único, `switch`, `select`) | _link_ |
-| Funções: múltiplos retornos, funções como valores, closures | _link_ |
-| `defer` | _link_ |
-| Interfaces implícitas (`io.Reader`, `http.Handler`) | _link_ |
-| Goroutines e channels | _link_ |
-| Tratamento de erro (`error`, `if err != nil`, `errors.Is`) | _link_ |
-| Pacotes e visibilidade (maiúscula/minúscula, `internal/`) | _link_ |
+| Tipos básicos e compostos (struct, slice, map) | `Event` e o mapa de inscritos em [hub.go](../internal/progress/hub.go); `share.File` e o mapa nome → arquivo em [server.go](../internal/server/server.go) |
+| Declarações (`var`, `:=`, `const`, inferência de tipos) | `const MaxNameBytes` e `var windowsReserved` em [storage.go](../internal/storage/storage.go); `var version` trocada no build em [main.go](../cmd/qrdrop/main.go) |
+| Comandos de controle (`for` único, `switch`, `select`) | `select` com quatro channels em [events.go](../internal/server/events.go); `for range` num channel em [reporter.go](../internal/progress/reporter.go); `switch` de tipo em [ip.go](../internal/netutil/ip.go) |
+| Funções: múltiplos retornos, funções como valores, closures | middleware `requireToken` em [server.go](../internal/server/server.go); retorno nomeado de `save` em [upload.go](../internal/server/upload.go); `sort.Slice` em [share.go](../internal/share/share.go) |
+| `defer` | `save` em [upload.go](../internal/server/upload.go) (ordem inversa: fecha o arquivo antes de apagar); espera da goroutine do corpo em [client.go](../internal/client/client.go) |
+| Interfaces implícitas (`io.Reader`, `http.Handler`) | `progressWriter` é um `io.Writer` em [upload.go](../internal/server/upload.go); `byteSize` e `stringList` são `flag.Value` em [flags.go](../cmd/qrdrop/flags.go); `io.ReadSeeker` em [download.go](../internal/server/download.go) |
+| Goroutines e channels | hub em [hub.go](../internal/progress/hub.go); pool de envio em [client.go](../internal/client/client.go); semáforo em [upload.go](../internal/server/upload.go); `sync/atomic` em [server.go](../internal/server/server.go) |
+| Tratamento de erro (`error`, `if err != nil`, `errors.Is`) | `TooLargeError` + `errors.As` e `errHashMismatch` + `errors.Is` em [upload.go](../internal/server/upload.go) |
+| Pacotes e visibilidade (maiúscula/minúscula, `internal/`) | pastas em `internal/`; `Stats()` exportado e `save`, `deliver` não exportados |
+
+Ferramentas que vêm com a linguagem, também com exemplos no repositório: testes de tabela, fuzzing nativo (`FuzzSafeName`) e exemplos testáveis (`ExampleSafeName`) em [storage_test.go](../internal/storage/storage_test.go); benchmark em MB/s (`BenchmarkUpload`) em [server_test.go](../internal/server/server_test.go); detector de corrida (`go test -race`), que achou um bug real no `qrdrop send` (ver histórico de commits); e um teste de ponta a ponta em [main_test.go](../cmd/qrdrop/main_test.go) que compila o programa com `os/exec`, sobe o receptor, envia arquivos com `qrdrop send` e manda Ctrl+C.
+
+Compilação condicional: [console_windows.go](../cmd/qrdrop/console_windows.go) começa com `//go:build windows` e só entra no binário do Windows (segura a janela aberta com dois cliques e liga as cores ANSI); nos outros sistemas entra [console_other.go](../cmd/qrdrop/console_other.go), com as mesmas funções. É assim que o mesmo código compila para os três sistemas.
+
+Testando os testes: plantamos 32 defeitos no código, um por vez (inverter uma condição, apagar uma linha), e rodamos os testes. Na primeira rodada 9 passaram despercebidos; cada um ganhou um teste, e hoje os 32 são pegos. Os testes com "olhar de atacante" (hash em maiúsculas, formulário fora de ordem, conexão derrubada no meio, vazamento de goroutines) estão em [robustez_test.go](../internal/server/robustez_test.go).
 
 ### Ganchos com o conteúdo da disciplina
 - **Abstração (aula 07):** interfaces, encapsulamento por pacote

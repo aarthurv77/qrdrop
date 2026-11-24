@@ -21,6 +21,18 @@ Linguagem do projeto: **Go**.
 
 O celular não instala nada: usa o navegador. O PC roda um único binário, que já traz a página web dentro dele.
 
+## Download
+
+Baixe o binário do seu sistema na página de [Releases](https://github.com/aarthurv77/qrdrop/releases) e rode no terminal. Não é preciso instalar Go nem nada além dele.
+
+| Sistema | Arquivo |
+|---|---|
+| Windows | `qrdrop-windows-amd64.exe` (ARM: `qrdrop-windows-arm64.exe`) |
+| Linux | `qrdrop-linux-amd64` (ARM: `qrdrop-linux-arm64`) |
+| macOS | `qrdrop-darwin-arm64` (Apple Silicon) ou `qrdrop-darwin-amd64` (Intel) |
+
+No Linux e no macOS, dê permissão de execução antes: `chmod +x qrdrop-*`. O `SHA256SUMS.txt` da Release serve para conferir o download (`sha256sum -c SHA256SUMS.txt`).
+
 ## Uso
 
 ```bash
@@ -58,6 +70,15 @@ go test -run=^$ -fuzz=FuzzSafeName ./internal/storage   # fuzzing dos nomes de a
 go test -run=^$ -bench=. ./internal/server              # vazão do upload em MB/s
 ./scripts/build.sh v1.0.0  # binários para Windows, Linux e macOS em dist/
 ```
+
+### Publicar uma versão
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+A tag dispara o workflow [`release.yml`](.github/workflows/release.yml): os testes rodam em Windows, Linux e macOS e, se passarem, o `scripts/build.sh` gera os binários, que vão para uma Release nova junto com o `SHA256SUMS.txt`.
 
 ## Documentação
 

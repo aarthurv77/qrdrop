@@ -1,0 +1,54 @@
+name: Release
+
+# Publica uma Release com os binários quando alguém envia uma tag de versão:
+#   git tag v1.0.0 && git push origin v1.0.0
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # criar a Release e anexar os arquivos
+
+jobs:
+  # Antes de publicar, os testes rodam nos três sistemas. Uma Release só sai
+  # se o código passar em Windows, Linux e macOS.
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Vet
+        run: go vet ./...
+      - name: Testes
+        run: go test ./...
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # histórico completo, para as notas da Release
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      # Compilação cruzada: todos os binários saem desta máquina Linux.
+      - name: Compilar
+        run: ./scripts/build.sh "$GITHUB_REF_NAME"
+      - name: Conferir o binário do Linux
+        run: ./dist/qrdrop-linux-amd64 -version | grep -F "$GITHUB_REF_NAME"
+      # Quem baixar pode conferir o arquivo com sha256sum -c SHA256SUMS.txt
+      # (ou Get-FileHash no PowerShell).
+      - name: Somas SHA-256
+        working-directory: dist
+        run: sha256sum qrdrop-* > SHA256SUMS.txt
+      - name: Publicar
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --title "qrdrop $GITHUB_REF_NAME"

@@ -74,12 +74,12 @@ go test -run=^$ -bench=. ./internal/server              # vazão do upload em MB
 | Integrante | Papel principal | Issues |
 |---|---|---|
 | Hendrick ([@Hendrickhmq](https://github.com/Hendrickhmq)) | Backend, concorrência e frontend | #2 servidor, #3 upload, #4 IP local, #5 QR code, #6 página mobile, #8 token, #9 hub de progresso, #11 SSE, #12 nomes seguros, #13 embed, #14 testes com httptest, #16 Ctrl+C, #23 PC → celular |
-| Gustavo Choueiri | Testes, build/CI e análise da linguagem | #1 equipe no README, #3 teste com arquivo de 150 MB, #9 teste com 50 uploads simultâneos, #15 releases multiplataforma, #19 construtores e exemplos de código |
-| Artur | _a definir_ | |
+| Gustavo Choueiri | Testes, build/CI e análise da linguagem | #1 tabela da equipe no README, #3 teste com arquivo de 150 MB, #9 teste com 50 uploads simultâneos, #15 releases multiplataforma, #19 construtores e exemplos de código |
+| Artur | Estrutura do projeto, CI e coordenação | #1 repositório, `go.mod`, CI, documentação inicial e criação das issues e marcos |
 | Gabriel | _a definir_ | |
 | Antonio | _a definir_ | |
 
-As issues #3 e #9 têm dois autores: Hendrick implementou o upload e o hub, e Gustavo escreveu os testes que faltavam para cumprir os critérios de aceite. O histórico de issues e PRs é o registro detalhado do que cada um fez.
+Algumas issues têm mais de um autor: na #1, Artur montou o repositório e Gustavo preencheu a tabela da equipe; na #3 e na #9, Hendrick implementou o upload e o hub, e Gustavo escreveu os testes que faltavam para cumprir os critérios de aceite. O histórico de issues e PRs é o registro detalhado do que cada um fez.
 
 ## Referências
 

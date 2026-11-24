@@ -75,9 +75,9 @@ go test -run=^$ -bench=. ./internal/server              # vazão do upload em MB
 |---|---|---|
 | Hendrick ([@Hendrickhmq](https://github.com/Hendrickhmq)) | Backend, concorrência e frontend | #2 servidor, #3 upload, #4 IP local, #5 QR code, #6 página mobile, #8 token, #9 hub de progresso, #11 SSE, #12 nomes seguros, #13 embed, #14 testes com httptest, #16 Ctrl+C, #23 PC → celular |
 | Gustavo Choueiri | Testes, build/CI e análise da linguagem | #1 equipe no README, #3 teste com arquivo de 150 MB, #9 teste com 50 uploads simultâneos, #15 releases multiplataforma, #19 construtores e exemplos de código |
-| _nome_ | _a definir_ | |
-| _nome_ | _a definir_ | |
-| _nome_ | _a definir_ | |
+| Artur | _a definir_ | |
+| Gabriel | _a definir_ | |
+| Antonio | _a definir_ | |
 
 As issues #3 e #9 têm dois autores: Hendrick implementou o upload e o hub, e Gustavo escreveu os testes que faltavam para cumprir os critérios de aceite. O histórico de issues e PRs é o registro detalhado do que cada um fez.
 
